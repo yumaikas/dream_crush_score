@@ -1,1 +1,15 @@
-<h1>Welcome to the scoreboard!</h1>
+<p>
+<h2>Join a room with a code!</h2>
+<.form let={f} for={@join_form} phx-submit="try_join_room">
+<%= label f, :code, "Code" %>
+<%= text_input f, :code %>
+<%= error_tag f, :code %>
+<%= submit "Join!" %>
+</.form>
+</p>
+
+<hr/>
+<p>
+<h2>Create your own score board!</h2>
+<button phx-click="create_room">Create Board!</button>
+</p>
