@@ -10,6 +10,11 @@
 
 <hr/>
 <p>
+<%= if !assigns[:join_code] do %>
 <h2>Create your own score board!</h2>
 <button phx-click="create_room">Create Board!</button>
+<%else %>
+<h2>Re-join game in progress!</h2>
+<%= live_redirect "Rejoin!", to: Routes.live_path(@socket, DreamCrushScoreWeb.GameMasterLive)%>
+<%end %>
 </p>

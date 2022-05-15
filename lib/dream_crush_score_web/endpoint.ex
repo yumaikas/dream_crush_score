@@ -5,7 +5,9 @@ defmodule DreamCrushScoreWeb.Endpoint do
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
   @session_options [
-    store: :cookie,
+    store: PhoenixLiveSession,
+    pub_sub: DreamCrushScore.PubSub,
+    table: :session,
     key: "_dream_crush_score_key",
     signing_salt: "0BUpBgSQ"
   ]

@@ -18,6 +18,7 @@ defmodule DreamCrushScoreWeb.Router do
     pipe_through :browser
 
     live "/", HomeLive
+    live "/room", GameMasterLive
   end
 
   # Other scopes may use custom stacks.

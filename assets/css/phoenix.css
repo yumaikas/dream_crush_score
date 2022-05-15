@@ -52,12 +52,20 @@ select {
   display: block;
 }
 
+body, input {
+  color: cyan !important;
+  background-color: rgb(1, 22, 31);
+}
+
 /* Headers */
 header {
   width: 100%;
-  background: #fdfdfd;
-  border-bottom: 1px solid #eaeaea;
+  color: magenta;
+  border-bottom: 1px solid #000000;
   margin-bottom: 2rem;
+}
+header a {
+  color: magenta;
 }
 header section {
   align-items: center;

@@ -7,6 +7,7 @@ defmodule DreamCrushScore.Application do
 
   @impl true
   def start(_type, _args) do
+    :ets.new(:session, [:named_table, :public, read_concurrency: true])
     children = [
       # Start the Ecto repository
       DreamCrushScore.Repo,
@@ -15,7 +16,8 @@ defmodule DreamCrushScore.Application do
       # Start the PubSub system
       {Phoenix.PubSub, name: DreamCrushScore.PubSub},
       # Start the Endpoint (http/https)
-      DreamCrushScoreWeb.Endpoint
+      DreamCrushScoreWeb.Endpoint,
+      DreamCrushScore.Rooms,
       # Start a worker by calling: DreamCrushScore.Worker.start_link(arg)
       # {DreamCrushScore.Worker, arg}
     ]

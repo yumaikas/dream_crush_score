@@ -1,0 +1,13 @@
+<%=if @joined do %>
+<h2>You're the host!</h2>
+<p>Room code: <%= @join_code %></p>
+
+<ol>
+<%=for player_name <- @players do %>
+<li><%= player_name %></li>
+<%end%>
+</ol>
+
+<%else %>
+<h2>Room creation failed, going home in <%= @seconds %> seconds</h2>
+<%end %>
