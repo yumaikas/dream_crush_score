@@ -1,4 +1,8 @@
-# DreamCrushScore
+# Dream Crush Score
+
+This is a fan-site for the Dream Crush boardgame, specifically for keeping score of a round of Dream Crush without using pencil/paper.
+
+## Phoenix boilerplate, useful for getting up and running
 
 To start your Phoenix server:
 
