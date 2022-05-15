@@ -59,13 +59,13 @@ defmodule DreamCrushScore.Rooms do
   def player_join(join_code, name) when is_binary(join_code) and is_binary(name) do
     {ok?, players} = Agent.get_and_update(__MODULE__, fn(state) ->
       room = state[join_code]
+      IO.inspect state
       if room do
         room = Room.join(room, %Player{name: name})
-        {{:ok, Room.joined_players(room)}, %{state | join_code => room}}
+        {{:ok, Room.joined_players(room)}, Map.put(state, join_code, room)}
       else
         {{:error, nil}, state}
       end
-      state
     end)
     if ok? == :ok do
       PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, players})

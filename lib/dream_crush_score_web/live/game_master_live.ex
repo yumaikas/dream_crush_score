@@ -1,6 +1,7 @@
 defmodule DreamCrushScoreWeb.GameMasterLive do
   use DreamCrushScoreWeb, :live_view
   alias DreamCrushScore.Rooms
+  alias DreamCrushScore.Room
   alias DreamCrushScoreWeb.HomeLive
   alias Phoenix.PubSub
   alias DreamCrushScore.PubSub, as: MyPubSub
@@ -25,7 +26,7 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
       Process.send_after(self(), :clean_path, 1)
       socket = socket
         |> assign(:join_code, join_code)
-        |> assign(:players, room_info.players)
+        |> assign(:players, Room.joined_players(room_info))
         |> assign(:joined, true)
       {:ok, socket}
     else

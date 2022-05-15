@@ -5,12 +5,13 @@ defmodule DreamCrushScore.Room.Join do
 
   embedded_schema do
     field :code, :string
+    field :name, :string
   end
 
   @doc false
   def changeset(%__MODULE__{} = join, attrs) do
     join
-    |> cast(attrs, [:code])
-    |> validate_required([:code])
+    |> cast(attrs, [:code, :name])
+    |> validate_required([:code, :name])
   end
 end
