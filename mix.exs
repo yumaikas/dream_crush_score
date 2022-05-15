@@ -34,6 +34,7 @@ defmodule DreamCrushScore.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.6.8"},
+      {:phoenix_live_session, "~> 0.1"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.6"},
       {:ecto_sqlite3, ">= 0.0.0"},
