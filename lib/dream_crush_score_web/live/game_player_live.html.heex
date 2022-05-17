@@ -1,4 +1,17 @@
 <%= case @game_state do %>
 <% :setup -> %>
-    <h2>Name?</h2>
+    <p>Waiting on setup...</p>
+    <%= if assigns[:name] do %>
+        <p><%= @name %></p>
+    <%end %>
+<% :waiting -> %>
+    <p>Waiting on other players...</p>
+<% :pick_self -> %>
+    <p>Who do you want to pick?</p>
+<% :pick_person -> %>
+    <p>Who do you think X choose?</p>
 <%end %>
+
+<%= if @show_code do %>
+    Room code is: <%= @join_code %>
+<% end %>

@@ -19,6 +19,7 @@ defmodule DreamCrushScoreWeb.Router do
 
     live "/", HomeLive
     live "/room", GameMasterLive
+    live "/playing", GamePlayerLive
   end
 
   # Other scopes may use custom stacks.

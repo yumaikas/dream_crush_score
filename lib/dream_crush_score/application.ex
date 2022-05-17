@@ -7,7 +7,6 @@ defmodule DreamCrushScore.Application do
 
   @impl true
   def start(_type, _args) do
-    :ets.new(:session, [:named_table, :public, read_concurrency: true])
     children = [
       # Start the Ecto repository
       DreamCrushScore.Repo,

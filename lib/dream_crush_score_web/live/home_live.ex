@@ -3,6 +3,7 @@ defmodule DreamCrushScoreWeb.HomeLive do
   alias DreamCrushScore.Room.Join
   alias DreamCrushScore.Rooms
   alias DreamCrushScoreWeb.GameMasterLive
+  alias DreamCrushScoreWeb.GamePlayerLive
 
 
   @impl true
@@ -22,7 +23,6 @@ defmodule DreamCrushScoreWeb.HomeLive do
        false
     end
     IO.inspect join_code
-
     socket = socket
     |> assign(join_form: Join.changeset(%Join{}, %{code: "", name: ""}))
     |> assign(join_code: join_code)
@@ -37,13 +37,18 @@ defmodule DreamCrushScoreWeb.HomeLive do
 
   @impl true
   def handle_event("try_join_room", %{"join" => %{"code" => code, "name" => name}}, socket) do
-    status = Rooms.player_join(code, name)
+    {status, player_id} = Rooms.player_join(code, name)
     case status do
       :ok ->
-        {:noreply, socket} # TODO: Redirect to player room
+        PhoenixLiveSession.put_session(socket, "player_id", player_id)
+        PhoenixLiveSession.put_session(socket, "join_code", code)
+        socket = socket
+        |> push_redirect(to: Routes.live_path(socket, GamePlayerLive))
+        {:noreply, socket} # TODO: Redirect to player page
       :error ->
         join_form = socket.join_form
-        join_form = join_form |> Ecto.Changeset.add_error(join_form, :code, "Invite code wasn't found!")
+        join_form = join_form
+        |> Ecto.Changeset.add_error(join_form, :code, "Invite code wasn't found!")
         socket = socket |> assign(:join_form, join_form)
         {:noreply, socket}
     end

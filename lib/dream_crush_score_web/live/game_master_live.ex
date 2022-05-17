@@ -22,6 +22,8 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     end
 
     room_info = Rooms.get_room(join_code)
+    IO.inspect(room_info)
+
     if room_info do
       Process.send_after(self(), :clean_path, 1)
       socket = socket
@@ -44,6 +46,11 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   end
 
   def handle_params(_params, _uri, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("kick-player", args, socket) do
+    Rooms.kick_player(socket.assigns.join_code, args["player_id"])
     {:noreply, socket}
   end
 

@@ -7,7 +7,6 @@ defmodule DreamCrushScoreWeb.Endpoint do
   @session_options [
     store: PhoenixLiveSession,
     pub_sub: DreamCrushScore.PubSub,
-    table: :session,
     key: "_dream_crush_score_key",
     signing_salt: "0BUpBgSQ"
   ]
