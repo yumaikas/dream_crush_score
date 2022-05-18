@@ -2,12 +2,14 @@ defmodule DreamCrushScoreWeb.HomeLive do
   use DreamCrushScoreWeb, :live_view
   alias DreamCrushScore.Room.Join
   alias DreamCrushScore.Rooms
+  alias DreamCrushScore.GameSession
   alias DreamCrushScoreWeb.GameMasterLive
   alias DreamCrushScoreWeb.GamePlayerLive
 
 
   @impl true
-  def mount(params, session, socket) do
+  def mount(_params, session, socket) do
+    bound? = GameSession.mount(session[:__sid__])
     socket = if Phoenix.LiveView.connected?(socket) do
       socket
       |> PhoenixLiveSession.maybe_subscribe(session)
@@ -15,20 +17,27 @@ defmodule DreamCrushScoreWeb.HomeLive do
       socket
     end
 
-    join_code = unless params["clear_token"] do
-       session["join_code"]
-    else
-       PhoenixLiveSession.put_session(socket, :join_code, false)
-       Process.send_after(self(), :clean, 1)
-       false
+    cond do
+      bound? ->
+        role = GameSession.get("role")
+        join_code = GameSession.get("join_code")
+        cond do
+          role === :admin && join_code ->
+            {:ok, push_redirect(socket, to: Routes.live_path(socket, GameMasterLive))} # TODO: Redirect to player page
+          role === :player && join_code ->
+            {:ok, push_redirect(socket, to: Routes.live_path(socket, GamePlayerLive))} # TODO: Redirect to player page
+          true ->
+            socket = socket
+            |> assign(:join_form, Join.changeset(%Join{}, %{code: "", name: ""}))
+            |> assign(:join_code, false)
+            {:ok, socket}
+        end
+      true ->
+        socket = socket
+        |> assign(:join_form, Join.changeset(%Join{}, %{code: "", name: ""}))
+        |> assign(:join_code, false)
+        {:ok, socket}
     end
-    socket = socket
-    |> assign(join_form: Join.changeset(%Join{}, %{code: "", name: ""}))
-    |> assign(join_code: join_code)
-    |> assign(:__sid__, session[:__sid__])
-    |> assign(:__opts__, session[:__opts__])
-
-    {:ok, socket}
   end
 
   @impl true
@@ -41,17 +50,10 @@ defmodule DreamCrushScoreWeb.HomeLive do
     {status, player_id} = Rooms.player_join(code, name)
     case status do
       :ok ->
-        check_redirect(
-          [{"player_id", player_id},
-           {"join_code", code},
-           {"role", :player}],
-          Routes.live_path(socket, GamePlayerLive)
-        )
-        socket = socket
-        |> PhoenixLiveSession.put_session("player_id", player_id)
-        |> PhoenixLiveSession.put_session("join_code", code)
-        |> PhoenixLiveSession.put_session("role", :player)
-        {:noreply, socket} # TODO: Redirect to player page
+        GameSession.put("player_id", player_id)
+        GameSession.put("join_code", code)
+        GameSession.put("role", :player)
+        {:noreply, push_redirect(socket, to: Routes.live_path(socket, GamePlayerLive))} # TODO: Redirect to player page
       :error ->
         {:noreply, put_flash(socket, :error, "Invite code wasn't found!")}
     end
@@ -65,7 +67,9 @@ defmodule DreamCrushScoreWeb.HomeLive do
   @impl true
   def handle_event("create_room", _args, socket) do
     join_code = Rooms.create_room()
-    {:noreply, push_redirect(socket, to: Routes.live_path(socket, GameMasterLive, join_code: join_code))}
+    GameSession.put("join_code", join_code)
+    GameSession.put("role", :admin)
+    {:noreply, push_redirect(socket, to: Routes.live_path(socket, GameMasterLive))}
   end
 
   defp extract_session(socket) do

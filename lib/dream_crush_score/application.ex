@@ -15,8 +15,9 @@ defmodule DreamCrushScore.Application do
       # Start the PubSub system
       {Phoenix.PubSub, name: DreamCrushScore.PubSub},
       # Start the Endpoint (http/https)
-      DreamCrushScoreWeb.Endpoint,
+      DreamCrushScore.GameSession,
       DreamCrushScore.Rooms,
+      DreamCrushScoreWeb.Endpoint,
       # Start a worker by calling: DreamCrushScore.Worker.start_link(arg)
       # {DreamCrushScore.Worker, arg}
     ]

@@ -6,18 +6,18 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   alias DreamCrushScore.Room.AddCrush
   alias Phoenix.PubSub
   alias DreamCrushScore.PubSub, as: MyPubSub
+  alias DreamCrushScore.GameSession
 
   def mount(params, session, socket) do
-    join_code = params["join_code"] || session["join_code"]
-    connected? = Phoenix.LiveView.connected?(socket)
-
-    socket = if connected? do
-      socket
-      |> PhoenixLiveSession.maybe_subscribe(session)
-      |> PhoenixLiveSession.put_session("join_code", join_code)
-    else
-      socket
+    bound? = GameSession.mount(session[:__sid__])
+    unless bound? do
+      IO.warn "unbound GameSession in game-master!"
+      IO.inspect(session)
     end
+
+    connected? = Phoenix.LiveView.connected?(socket)
+    join_code = if bound? do GameSession.get("join_code") else nil end
+
     if connected? && join_code do
       PubSub.subscribe(MyPubSub, Rooms.topic_of_room(join_code))
     end
@@ -25,7 +25,6 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     room_info = Rooms.get_room(join_code)
 
     if room_info do
-      Process.send_after(self(), :clean_path, 1)
       socket = socket
         |> assign(:join_code, join_code)
         |> assign(:players, Room.joined_players(room_info))
@@ -36,10 +35,9 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     else
       Process.send_after(self(), :go_home, 5000)
       Process.send_after(self(), {:dec_seconds, 5}, 1000)
-      socket = if connected? do
-        PhoenixLiveSession.put_session(socket, "join_code", false)
-      else
-        socket
+      if bound? do
+        GameSession.put("join_code", false)
+        GameSession.put("role", false)
       end
       socket = socket
       |> assign(:join_code, "")
