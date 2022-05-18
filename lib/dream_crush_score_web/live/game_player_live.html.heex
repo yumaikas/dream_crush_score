@@ -4,12 +4,15 @@
     <%= if assigns[:name] do %>
         <p><%= @name %></p>
     <%end %>
-<% :waiting -> %>
-    <p>Waiting on other players...</p>
-<% :pick_self -> %>
+<% :in_round -> %>
     <p>Who do you want to pick?</p>
-<% :pick_person -> %>
     <p>Who do you think X choose?</p>
+<% :end_round -> %>
+    <p>The scores are:</p>
+
+<% :end_game -> %>
+    <p>X won!</p>
+
 <%end %>
 
 <%= if @show_code do %>

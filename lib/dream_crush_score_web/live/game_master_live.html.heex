@@ -11,8 +11,25 @@
  </li>
 <%end%>
 </ol>
+<%=if length(Enum.filter(@players, fn p -> p.status == :awake end)) >= 2 do %>
+    <button phx-click="start-round">Start!</button>
+<% end %>
 
+<ul>
+<%=for crush <- @crushes do %>
+    <li><%=crush %></li>
+<% end %>
+</ul>
 
+<%= if length(@crushes) < 5 do %>
+<.form let={f} for={@add_crush_form} phx-submit="add-crush">
+    <%= text_input f, :name %>
+    <%= submit "Add" %>
+</.form>
 <%else %>
+
+<% end %>
+
+<% else %>
 <h2>Room creation failed, going home in <%= @seconds %> seconds</h2>
 <%end %>

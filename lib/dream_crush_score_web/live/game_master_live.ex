@@ -3,6 +3,7 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   alias DreamCrushScore.Rooms
   alias DreamCrushScore.Room
   alias DreamCrushScoreWeb.HomeLive
+  alias DreamCrushScore.Room.AddCrush
   alias Phoenix.PubSub
   alias DreamCrushScore.PubSub, as: MyPubSub
 
@@ -22,20 +23,23 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     end
 
     room_info = Rooms.get_room(join_code)
-    IO.inspect(room_info)
 
     if room_info do
       Process.send_after(self(), :clean_path, 1)
       socket = socket
         |> assign(:join_code, join_code)
         |> assign(:players, Room.joined_players(room_info))
+        |> assign(:crushes, Room.crushes(room_info))
+        |> assign(:add_crush_form, AddCrush.changeset(%AddCrush{}, %{}))
         |> assign(:joined, true)
       {:ok, socket}
     else
       Process.send_after(self(), :go_home, 5000)
       Process.send_after(self(), {:dec_seconds, 5}, 1000)
-      if connected? do
+      socket = if connected? do
         PhoenixLiveSession.put_session(socket, "join_code", false)
+      else
+        socket
       end
       socket = socket
       |> assign(:join_code, "")
@@ -49,8 +53,14 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     {:noreply, socket}
   end
 
+  def handle_event("add-crush", args, socket) do
+    Rooms.add_crush(socket.assigns.join_code, args["add_crush"]["name"])
+    {:noreply, assign(socket, :add_crush_form, AddCrush.changeset(%AddCrush{}, %{}))}
+  end
+
   def handle_event("kick-player", args, socket) do
-    Rooms.kick_player(socket.assigns.join_code, args["player_id"])
+    IO.inspect(socket.assigns.join_code)
+    Rooms.kick_player(socket.assigns.join_code, args["player-id"])
     {:noreply, socket}
   end
 
@@ -69,9 +79,22 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     {:noreply, socket}
   end
 
+  def handle_info({:crushes_updated, new_crushes}, socket) do
+    {:noreply, assign(socket, :crushes, new_crushes)}
+  end
+
   def handle_info({:live_session_updated, session}, socket) do
     socket = assign(socket, :join_code, session["join_code"])
     {:noreply, socket}
+  end
+
+  def handle_info(:start_round, socket) do
+    if socket.assigns.game_state in [:setup, :end_round] do
+      socket = assign(socket, :game_state, :round)
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info(:go_home, socket) do

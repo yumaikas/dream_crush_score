@@ -21,12 +21,19 @@ defmodule DreamCrushScore.Room do
   end
 
   def kick_player(%__MODULE__{players: players} = state, id) do
-    Map.put(state, players, Enum.filter(players, fn(p) -> p.id !== id end))
+    Map.put(state, :players, Enum.filter(players, fn(p) -> p.id !== id end))
   end
 
   def joined_players(%__MODULE__{players: players}) do
-    IO.inspect(players)
     Enum.map(players, fn(p) -> %{ name: p.name, id: p.id, status: p.status } end)
+  end
+
+  def crushes(%__MODULE__{crushes: crushes}) do
+    crushes
+  end
+
+  def players_full?(%__MODULE__{players: players}) do
+    length(players) > 6
   end
 
   def mark_player_asleep(%__MODULE__{players: players} = state, id) do
@@ -91,25 +98,36 @@ defmodule DreamCrushScore.Rooms do
     GenServer.call(__MODULE__, {:get_room, join_code})
   end
 
-
-  @spec player_join(binary, binary) :: {:error, nil} | {:ok, any}
   def player_join(join_code, name) when is_binary(join_code) and is_binary(name) do
-    {ok?, players, new_player_id} = GenServer.call(__MODULE__, {:player_join, join_code, name})
-    if ok? == :ok do
-      PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, players})
-      {:ok, new_player_id}
-    else
-      {:error, nil}
+    {status, players, new_player_id} = GenServer.call(__MODULE__, {:player_join, join_code, name})
+    case status do
+      :ok ->
+        PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, players})
+        {:ok, new_player_id}
+      :full_room ->
+        {:error, "The room is already full!"}
+      :room_does_not_exist ->
+        {:error, "Room does not exist"}
     end
   end
 
   def player_reconnect(join_code, id) when is_binary(join_code) and is_binary(id) do
-    GenServer.call(__MODULE__, {:player_reconnect, self(), join_code, id})
+    player = GenServer.call(__MODULE__, {:player_reconnect, self(), join_code, id})
+    if player do
+      PubSub.subscribe(MyPubSub, topic_of_room(join_code))
+      PubSub.subscribe(MyPubSub, topic_of_player_id(id))
+    end
+    player
   end
 
-  def kick_player(join_code, id) do
+  def kick_player(join_code, id) when is_binary(join_code) and is_binary(id) do
     GenServer.cast(__MODULE__, {:kick_player, join_code, id})
   end
+
+  def add_crush(join_code, id) do
+    GenServer.call(__MODULE__, {:add_crush, join_code, id})
+  end
+
 
   @impl true
   def handle_cast({:kick_player, join_code, player_id}, state) do
@@ -118,7 +136,7 @@ defmodule DreamCrushScore.Rooms do
     room = state.rooms[join_code]
 
     PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
-    PubSub.broadcast(MyPubSub, topic_of_player_id(player_id), {:kicked})
+    PubSub.broadcast(MyPubSub, topic_of_player_id(player_id), :kicked)
 
     {:noreply, state}
   end
@@ -127,24 +145,29 @@ defmodule DreamCrushScore.Rooms do
   def handle_call({:player_join, join_code, name}, {caller, _tag}, state) do
     room = state.rooms[join_code]
     player_id = make_code(8)
-    if room do
-      player = %Player{name: name, id: player_id, status: :live}
-      room = Room.join(room, player)
-      ref = Process.monitor(caller)
-      state = state
-      |> put_in([:rooms, join_code], room)
-      |> put_in([:players, ref], {join_code, player_id})
+    cond do
+      room && !Room.players_full?(room) ->
+        player = %Player{name: name, id: player_id, status: :live}
+        room = Room.join(room, player)
+        ref = Process.monitor(caller)
+        state = state
+        |> put_in([:rooms, join_code], room)
+        |> put_in([:players, ref], {join_code, player_id})
 
-      {:reply, {:ok, Room.joined_players(room), player_id}, state }
-    else
-      {:reply, {:error, nil, nil}, state}
+        {:reply, {:ok, Room.joined_players(room), player_id}, state }
+      room && Room.players_full?(room) ->
+        {:reply, {:full_room, nil, nil}, state}
+      true ->
+        {:reply, {:room_does_not_exist, nil, nil}, state}
     end
   end
 
+  @impl true
   def handle_call({:get_room, join_code}, _from, state) do
     {:reply, state.rooms[join_code], state}
   end
 
+  @impl true
   def handle_call({:create_room}, _from, state) do
     join_code = make_code(4)
     state = Map.put(state, :rooms, Map.put(state.rooms, join_code, %Room{}))
@@ -152,22 +175,47 @@ defmodule DreamCrushScore.Rooms do
   end
 
   @impl true
+  def handle_call({:add_crush, join_code, name},_from, state ) do
+    room = Map.get(state.rooms, join_code)
+    room = Room.add_crush(room, name)
+
+    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:crushes_updated, Room.crushes(room)})
+    rooms = Map.put(state.rooms, join_code, room)
+    state = Map.put(state, :rooms, rooms)
+
+    {:reply, :ok, state}
+  end
+
+  defp fetch_code(map, key, code) do
+    value = Map.get(map, key, nil)
+    if !value do
+      code
+    else
+      {:ok, value}
+    end
+  end
+
+
+  @impl true
   def handle_call({:player_reconnect, caller, join_code, player_id}, _from, state) do
-    %{
-      rooms: %{ ^join_code => room} = rooms,
-      players: players
-    } = state
-    ref = Process.monitor(caller)
-    players = Map.put(players, ref, {join_code, player_id})
-    room = Room.mark_player_awake(room, player_id)
-    rooms = Map.put(rooms, join_code, room)
-    state = state
-    |> Map.put(:rooms, rooms)
-    |> Map.put(:players, players)
-
-    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
-
-    {:reply, Room.get_player(room, player_id), state}
+    with %{ rooms: rooms, players: players } <- state,
+         {:ok, room} <- fetch_code(rooms, join_code, :no_room),
+         player when not(player === :invalid_player) <- Room.get_player(room, player_id) || :invalid_player
+    do
+      ref = Process.monitor(caller)
+      players = Map.put(players, ref, {join_code, player_id})
+      room = Room.mark_player_awake(room, player_id)
+      rooms = Map.put(rooms, join_code, room)
+      state = state
+      |> Map.put(:rooms, rooms)
+      |> Map.put(:players, players)
+      PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
+      {:reply, player, state}
+    else
+      err ->
+        IO.inspect err
+        {:reply, nil, state}
+    end
   end
 
 
