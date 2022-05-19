@@ -4,6 +4,8 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
   alias DreamCrushScore.Rooms
   alias DreamCrushScoreWeb.HomeLive
   alias DreamCrushScore.GameSession
+  alias Phoenix.PubSub
+  alias DreamCrushScore.PubSub, as: MyPubSub
 
   def mount(_params, session, socket) do
     connected? = Phoenix.LiveView.connected?(socket)
@@ -16,6 +18,11 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
       unless GameSession.get("role") === :player do
         {:ok, push_redirect(socket, Routes.live_path(socket, HomeLive))}
       else
+        if connected? do
+          PubSub.subscribe(MyPubSub, Rooms.topic_of_room(join_code))
+          PubSub.subscribe(MyPubSub, Rooms.topic_of_player_id(player_id))
+        end
+
         socket = socket
         |> assign(:show_code, true)
         |> assign(:game_state, :setup)
@@ -47,20 +54,19 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     {:noreply, socket}
   end
 
-  def handle_info({:players_updated, _updated_players}, socket) do
-    {:noreply, socket}
+  def handle_info({:players_updated, updated_players}, socket) do
+    {:noreply, assign(socket, :players, updated_players) }
   end
 
-  def handle_info({:crushes_updated, _updated_crushes}, socket) do
-    IO.inspect("TODO: handle updated crushes!")
-    {:noreply, socket}
+  def handle_info({:crushes_updated, updated_crushes}, socket) do
+    {:noreply, assign(socket, :crushes, updated_crushes)}
   end
 
   def handle_info(:kicked, socket) do
     {:noreply, push_redirect(socket, to: Routes.live_path(socket, HomeLive) )}
   end
 
-  def handle_info({:live_session_updated, session}, socket) do
+  def handle_info({:live_session_updated, _session}, socket) do
     {:noreply, socket}
   end
 
