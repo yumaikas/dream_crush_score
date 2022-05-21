@@ -40,13 +40,11 @@ defmodule DreamCrushScore.Room do
     state |> Map.put(:state, :in_round)
   end
 
-  def set_player_picks(%__MODULE__{} = state, player_id, picks) do
-    player = Map.get(state.players, player_id)
-    if player do
-      player = Player.set_picks(player, picks)
-      put_in(state, [:players, player_id], player)
+  def set_player_picks(%__MODULE__{} = room, player_id, picks) do
+    if room.players[player_id] do
+      update_in(room.players[player_id], &Player.set_picks(&1, picks))
     else
-      state
+      room
     end
   end
 

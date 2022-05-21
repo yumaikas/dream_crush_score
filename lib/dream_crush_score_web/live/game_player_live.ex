@@ -87,8 +87,22 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
       :self -> :my_pick
       id -> id
     end
+
     picks = GameSession.get(:picks) |> Map.put(pick_key, crush)
+
+    other_players = MapSet.new(socket.assigns.players, &(&1.id))
+    ready? = picks
+      |> Map.keys()
+      |> Enum.filter(&(&1 !== :my_pick))
+      |> MapSet.new()
+      |> MapSet.equal?(other_players)
+
     GameSession.put(:picks, picks)
+    if ready? do
+      %{join_code: join_code, player_id: player_id} = socket.assigns
+      Rooms.save_player_picks(join_code, player_id, picks)
+    end
+
     socket |> assign(:picks, picks)
   end
 
