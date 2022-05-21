@@ -5,19 +5,49 @@ defmodule DreamCrushScore.Player do
   def set_status(%__MODULE__{} = player, new_status) when new_status == :awake or new_status == :asleep do
     Map.put(player, :status, new_status)
   end
+  def set_picks(%__MODULE__{} = player, picks) do
+    Map.put(player, :picks, picks)
+  end
 
+  def save_picks(%__MODULE__{picks: picks, pick_history: history } = player) do
+    Map.put(player, :pick_history, Enum.concat(history, [picks]))
+  end
 end
 
 defmodule DreamCrushScore.Room do
-  defstruct [players: [], crushes: [], id: ""]
+
+  # state: can be :starting, :in_round, :end_round, or :end_game
+  defstruct [players: [], crushes: [], id: "", state: :starting]
   alias DreamCrushScore.Player
 
-  def join(%__MODULE__{players: users} = room, %Player{}=user) do
-    %{room | players: Enum.concat(users, [user])}
+  def join(%__MODULE__{state: state, players: users} = room, %Player{}=user) do
+
+    case state do
+      :starting -> %{room | players: Enum.concat(users, [user])}
+      _ -> room
+    end
   end
 
   def get_player(%__MODULE__{players: players}, id) do
     Enum.find(players, fn(p) -> p.id == id end)
+  end
+
+  def game_state(%__MODULE__{state: state}) do
+    state
+  end
+
+  def start_round(%__MODULE__{} = state) do
+    state |> Map.put(:state, :in_round)
+  end
+
+  def set_player_picks(%__MODULE__{} = state, player_id, picks) do
+    player = Map.get(state.players, player_id)
+    if player do
+      player = Player.set_picks(player, picks)
+      put_in(state, [:players, player_id], player)
+    else
+      state
+    end
   end
 
   def kick_player(%__MODULE__{players: players} = state, id) do
@@ -28,12 +58,22 @@ defmodule DreamCrushScore.Room do
     Enum.map(players, fn(p) -> %{ name: p.name, id: p.id, status: p.status } end)
   end
 
+  def other_players(players, me_id) do
+    players
+    |> Enum.filter(fn p -> p.id !== me_id end)
+    |> Enum.map(fn(p) -> %{ name: p.name, id: p.id, status: p.status } end)
+  end
+
   def crushes(%__MODULE__{crushes: crushes}) do
     crushes
   end
 
-  def players_full?(%__MODULE__{players: players}) do
-    length(players) > 6
+  def in_round?(%__MODULE__{state: state}) do
+    state === :in_round
+  end
+
+  def can_join?(%__MODULE__{state: state, players: players}) do
+    length(players) > 6 or state !== :starting
   end
 
   def mark_player_asleep(%__MODULE__{players: players} = state, id) do
@@ -56,7 +96,9 @@ defmodule DreamCrushScore.Room do
     Map.put(state, :players, players)
   end
 
-  def add_crush(%__MODULE__{crushes: crushes} = room, crush) when is_binary(crush) do
+  def add_crush(%__MODULE__{state: state, crushes: crushes} = room, crush)
+    when is_binary(crush)
+    when state !== :in_round do
     unless Enum.any?(crushes, fn(c) -> c == crush end) do
       %{room | crushes: Enum.concat(crushes, [crush])}
     else
@@ -94,6 +136,7 @@ defmodule DreamCrushScore.Rooms do
   def create_room() do
     GenServer.call(__MODULE__, {:create_room})
   end
+
   def get_room(join_code) do
     GenServer.call(__MODULE__, {:get_room, join_code})
   end
@@ -112,12 +155,13 @@ defmodule DreamCrushScore.Rooms do
   end
 
   def player_reconnect(join_code, id) when is_binary(join_code) and is_binary(id) do
-    player = GenServer.call(__MODULE__, {:player_reconnect, self(), join_code, id})
-    if player do
-      PubSub.subscribe(MyPubSub, topic_of_room(join_code))
-      PubSub.subscribe(MyPubSub, topic_of_player_id(id))
+    case GenServer.call(__MODULE__, {:player_reconnect, self(), join_code, id}) do
+     {player, room} ->
+        PubSub.subscribe(MyPubSub, topic_of_room(join_code))
+        PubSub.subscribe(MyPubSub, topic_of_player_id(id))
+        {player, room}
+      _ -> nil
     end
-    player
   end
 
   def kick_player(join_code, id) when is_binary(join_code) and is_binary(id) do
@@ -128,17 +172,8 @@ defmodule DreamCrushScore.Rooms do
     GenServer.call(__MODULE__, {:add_crush, join_code, id})
   end
 
-
-  @impl true
-  def handle_cast({:kick_player, join_code, player_id}, state) do
-    %{ rooms: %{^join_code => room} = rooms } = state
-    state = %{state | rooms: %{ rooms | join_code => Room.kick_player(room, player_id)}}
-    room = state.rooms[join_code]
-
-    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
-    PubSub.broadcast(MyPubSub, topic_of_player_id(player_id), :kicked)
-
-    {:noreply, state}
+  def start_round(join_code) do
+    GenServer.cast(__MODULE__, {:start_round, join_code})
   end
 
   @impl true
@@ -146,16 +181,14 @@ defmodule DreamCrushScore.Rooms do
     room = state.rooms[join_code]
     player_id = make_code(8)
     cond do
-      room && !Room.players_full?(room) ->
+      room && !Room.can_join?(room) ->
         player = %Player{name: name, id: player_id, status: :live}
-        room = Room.join(room, player)
         ref = Process.monitor(caller)
         state = state
-        |> put_in([:rooms, join_code], room)
+        |> update_in([:rooms, join_code], &Room.join(&1, player))
         |> put_in([:players, ref], {join_code, player_id})
-
         {:reply, {:ok, Room.joined_players(room), player_id}, state }
-      room && Room.players_full?(room) ->
+      room && Room.can_join?(room) ->
         {:reply, {:full_room, nil, nil}, state}
       true ->
         {:reply, {:room_does_not_exist, nil, nil}, state}
@@ -170,20 +203,61 @@ defmodule DreamCrushScore.Rooms do
   @impl true
   def handle_call({:create_room}, _from, state) do
     join_code = make_code(4)
-    state = Map.put(state, :rooms, Map.put(state.rooms, join_code, %Room{}))
+    state = put_in(state.rooms[join_code], %Room{})
     {:reply, join_code, state}
   end
 
   @impl true
   def handle_call({:add_crush, join_code, name},_from, state ) do
-    room = Map.get(state.rooms, join_code)
-    room = Room.add_crush(room, name)
 
+    state = update_in(state.rooms[join_code], &Room.add_crush(&1, name))
+    room = state.rooms[join_code]
     PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:crushes_updated, Room.crushes(room)})
-    rooms = Map.put(state.rooms, join_code, room)
-    state = Map.put(state, :rooms, rooms)
 
     {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call({:player_reconnect, caller, join_code, player_id}, _from, state) do
+    with %{ rooms: rooms, players: players } <- state,
+         {:ok, room} <- fetch_code(rooms, join_code, :no_room),
+         player when not(player === :invalid_player) <- Room.get_player(room, player_id) || :invalid_player
+    do
+      ref = Process.monitor(caller)
+
+      state = state
+      |> update_in([:rooms, join_code], &Room.mark_player_awake(&1, player_id))
+      |> put_in([:players, ref], {join_code, player_id})
+      players = state.rooms[join_code] |> Room.joined_players()
+
+      PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, players})
+      {:reply, {player, room}, state}
+    else
+      err ->
+        IO.inspect err
+        {:reply, nil, state}
+    end
+  end
+
+  @impl true
+  def handle_cast({:kick_player, join_code, player_id}, state) do
+    state = update_in(state.rooms[join_code], &Room.kick_player(&1, player_id))
+    room = state.rooms[join_code]
+
+    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
+    PubSub.broadcast(MyPubSub, topic_of_player_id(player_id), :kicked)
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:start_round, join_code}, state) do
+    room = state.rooms[join_code]
+    state = state
+      |> update_in([:rooms, join_code], &Room.start_round(&1))
+
+    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:start_round, room})
+    {:noreply, state}
   end
 
   defp fetch_code(map, key, code) do
@@ -195,43 +269,19 @@ defmodule DreamCrushScore.Rooms do
     end
   end
 
-
-  @impl true
-  def handle_call({:player_reconnect, caller, join_code, player_id}, _from, state) do
-    with %{ rooms: rooms, players: players } <- state,
-         {:ok, room} <- fetch_code(rooms, join_code, :no_room),
-         player when not(player === :invalid_player) <- Room.get_player(room, player_id) || :invalid_player
-    do
-      ref = Process.monitor(caller)
-      players = Map.put(players, ref, {join_code, player_id})
-      room = Room.mark_player_awake(room, player_id)
-      rooms = Map.put(rooms, join_code, room)
-      state = state
-      |> Map.put(:rooms, rooms)
-      |> Map.put(:players, players)
-      PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
-      {:reply, player, state}
-    else
-      err ->
-        IO.inspect err
-        {:reply, nil, state}
-    end
-  end
-
-
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     {join_code, player_id} = state.players[ref]
 
-    room = state.rooms[join_code]
-    room = Room.mark_player_asleep(room, player_id)
-    rooms = Map.put(state.rooms, join_code, room)
-    players = Map.delete(state.players, ref)
-
     state = state
-    |> Map.put(:rooms, rooms)
-    |> Map.put(:players, players)
-    PubSub.broadcast(MyPubSub, topic_of_room(join_code), {:players_updated, Room.joined_players(room)})
+      |> update_in([:rooms, join_code], &Room.mark_player_asleep(&1, player_id))
+      |> update_in([:players], &Map.delete(&1, ref))
+
+    PubSub.broadcast(
+      MyPubSub,
+      topic_of_room(join_code),
+      {:players_updated, Room.joined_players(state.rooms[join_code])}
+    )
 
     {:noreply, state}
   end

@@ -4,9 +4,13 @@
     <%= if assigns[:name] do %>
         <p><%= @name %></p>
     <%end %>
+
 <% :in_round -> %>
-    <p>Who do you want to pick?</p>
-    <p>Who do you think X choose?</p>
+    <.crush_picker name="you" crushes={@crushes} picks={@picks} for={"self"} />
+    <%= for p <- @other_players do %>
+        <.crush_picker name={p.name} picks={@picks} crushes={@crushes} for={p.id} />
+    <% end %>
+
 <% :end_round -> %>
     <p>The scores are:</p>
 

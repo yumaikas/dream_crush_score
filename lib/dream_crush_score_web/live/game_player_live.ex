@@ -2,6 +2,7 @@
 defmodule DreamCrushScoreWeb.GamePlayerLive do
   use DreamCrushScoreWeb, :live_view
   alias DreamCrushScore.Rooms
+  alias DreamCrushScore.Room
   alias DreamCrushScoreWeb.HomeLive
   alias DreamCrushScore.GameSession
   alias Phoenix.PubSub
@@ -16,13 +17,12 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
       join_code = GameSession.get("join_code")
       player_id = GameSession.get("player_id")
       unless GameSession.get("role") === :player do
-        {:ok, push_redirect(socket, Routes.live_path(socket, HomeLive))}
+        {:ok, go_home(socket)}
       else
         if connected? do
           PubSub.subscribe(MyPubSub, Rooms.topic_of_room(join_code))
           PubSub.subscribe(MyPubSub, Rooms.topic_of_player_id(player_id))
         end
-
         socket = socket
         |> assign(:show_code, true)
         |> assign(:game_state, :setup)
@@ -37,16 +37,44 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     end
   end
 
-  defp join_room(socket, join_code, player_id) do
-    player = Rooms.player_reconnect(join_code, player_id)
+  defp start_round(socket, room, player_id) do
+    GameSession.put(:picks, %{})
+    socket
+      |> assign(:picks, %{})
+      |> load_round(room, player_id)
+  end
 
-    if player do
-      socket
-      |> assign(:join_code, join_code)
-      |> assign(:name, player.name)
-      |> assign(:player_id, player_id)
-    else
+  defp load_round(socket, room, player_id) do
+    other_players = Room.joined_players(room) |> Room.other_players(player_id)
+    socket
+      |> assign(:picks, socket.assigns[:picks] || GameSession.get(:picks) || %{})
+      |> assign(:game_state, :in_round)
+      |> assign(:other_players, other_players)
+      |> assign(:crushes, Room.crushes(room))
+  end
+
+  defp go_home(socket) do
+      GameSession.put("join_code", nil)
+      GameSession.put("player_id", nil)
+      GameSession.put("role", nil)
       push_redirect(socket, to: Routes.live_path(socket, HomeLive))
+  end
+
+  defp join_room(socket, join_code, player_id) do
+    case Rooms.player_reconnect(join_code, player_id) do
+      {player, %Room{state: state} = room} when state === :in_round  ->
+        socket
+        |> assign(:join_code, join_code)
+        |> assign(:name, player.name)
+        |> assign(:player_id, player_id)
+        |> load_round(room, player_id)
+      {player, %Room{} = _room}  ->
+        socket
+        |> assign(:join_code, join_code)
+        |> assign(:name, player.name)
+        |> assign(:player_id, player_id)
+      _ ->
+        go_home(socket)
     end
   end
 
@@ -54,8 +82,22 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     {:noreply, socket}
   end
 
+  def pick_crush_for_player(socket, crush, player_id) do
+    pick_key = case player_id  do
+      :self -> :my_pick
+      id -> id
+    end
+    picks = GameSession.get(:picks) |> Map.put(pick_key, crush)
+    GameSession.put(:picks, picks)
+    socket |> assign(:picks, picks)
+  end
+
+  def handle_event("pick-crush", %{"crush" => crush, "for" => player_id}, socket) do
+    {:noreply, pick_crush_for_player(socket, crush, player_id) }
+  end
+
   def handle_info({:players_updated, updated_players}, socket) do
-    {:noreply, assign(socket, :players, updated_players) }
+    {:noreply, assign(socket, :players, Room.other_players(updated_players, socket.assigns.player_id)) }
   end
 
   def handle_info({:crushes_updated, updated_crushes}, socket) do
@@ -63,11 +105,36 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
   end
 
   def handle_info(:kicked, socket) do
-    {:noreply, push_redirect(socket, to: Routes.live_path(socket, HomeLive) )}
+    {:noreply, go_home(socket)}
   end
 
   def handle_info({:live_session_updated, _session}, socket) do
     {:noreply, socket}
+  end
+
+  def handle_info({:start_round, room}, socket) do
+    {:noreply, start_round(socket, room, socket.assigns.player_id)}
+  end
+
+
+  # Function components
+
+  defp class_for(picks, player_id, crush) do
+    case Map.get(picks, player_id) do
+      ^crush -> ""
+      _ -> "button-outline"
+    end
+  end
+
+  def crush_picker(assigns) do
+    ~H"""
+    <p>
+      <h4>Who would <%= @name %> pick?</h4>
+      <%= for crush <- @crushes do %>
+        <button phx-click="pick-crush" class={class_for(@picks, @for, crush)} phx-value-crush={crush} phx-value-for={@for}><%=crush%></button>
+      <% end %>
+    </p>
+    """
   end
 
 end

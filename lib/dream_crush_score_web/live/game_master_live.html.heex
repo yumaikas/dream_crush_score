@@ -4,30 +4,37 @@
 
 <ol>
 <%=for player <- @players do %>
-<li><%= player.name %>, <%= player.status %>
+<li>
+    <%= player.name %>, <%= player.status %>
     <%= if player.status == :asleep do %>
         <button phx-click="kick-player" phx-value-player-id={player.id}>Kick</button>
     <% end %>
- </li>
+</li>
 <%end%>
 </ol>
-<%=if length(Enum.filter(@players, fn p -> p.status == :awake end)) >= 2 do %>
+
+<p>State of room: <%=@game_state%></p>
+
+<%=if (length(Enum.filter(@players, fn p -> p.status == :awake end)) >= 2 
+    && @game_state == :starting
+    && length(@crushes) >= 2) do %>
     <button phx-click="start-round">Start!</button>
 <% end %>
-
 <ul>
+
+<h3>Crushes</h3>
+
 <%=for crush <- @crushes do %>
     <li><%=crush %></li>
 <% end %>
 </ul>
 
 <%= if length(@crushes) < 5 do %>
-<.form let={f} for={@add_crush_form} phx-submit="add-crush">
-    <%= text_input f, :name %>
-    <%= submit "Add" %>
-</.form>
-<%else %>
-
+    <.form let={f} for={@add_crush_form} phx-submit="add-crush">
+        <%= text_input f, :name %>
+        <%= submit "Add" %>
+    </.form>
+<% else %>
 <% end %>
 
 <% else %>

@@ -27,9 +27,8 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     if room_info do
       socket = socket
         |> assign(:join_code, join_code)
-        |> assign(:players, Room.joined_players(room_info))
-        |> assign(:crushes, Room.crushes(room_info))
-        |> assign(:add_crush_form, AddCrush.changeset(%AddCrush{}, %{}))
+        |> load_room(room_info)
+        |> assign(:add_crush_form, AddCrush.changeset(%AddCrush{}, %{name: ""}))
         |> assign(:joined, true)
       {:ok, socket}
     else
@@ -47,6 +46,13 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     end
   end
 
+  defp load_room(socket, room) do
+    socket
+      |> assign(:players, Room.joined_players(room))
+      |> assign(:crushes, Room.crushes(room))
+      |> assign(:game_state, Room.game_state(room))
+  end
+
   def handle_params(_params, _uri, socket) do
     {:noreply, socket}
   end
@@ -59,6 +65,11 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   def handle_event("kick-player", args, socket) do
     IO.inspect(socket.assigns.join_code)
     Rooms.kick_player(socket.assigns.join_code, args["player-id"])
+    {:noreply, socket}
+  end
+
+  def handle_event("start-round", _args, socket) do
+    Rooms.start_round(socket.assigns.join_code)
     {:noreply, socket}
   end
 
@@ -86,10 +97,9 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     {:noreply, socket}
   end
 
-  def handle_info(:start_round, socket) do
-    if socket.assigns.game_state in [:setup, :end_round] do
-      socket = assign(socket, :game_state, :round)
-      {:noreply, socket}
+  def handle_info({:start_round, room}, socket) do
+    if socket.assigns[:game_state] in [:setup, :end_round] do
+      {:noreply, load_room(socket, room)}
     else
       {:noreply, socket}
     end
