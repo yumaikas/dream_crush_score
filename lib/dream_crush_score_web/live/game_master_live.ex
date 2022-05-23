@@ -4,11 +4,10 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   alias DreamCrushScore.Room
   alias DreamCrushScoreWeb.HomeLive
   alias DreamCrushScore.Room.AddCrush
-  alias Phoenix.PubSub
-  alias DreamCrushScore.PubSub, as: MyPubSub
+  alias DreamCrushScore.Room.Broadcast
   alias DreamCrushScore.GameSession
 
-  def mount(params, session, socket) do
+  def mount(_params, session, socket) do
     bound? = GameSession.mount(session[:__sid__])
     unless bound? do
       IO.warn "unbound GameSession in game-master!"
@@ -19,7 +18,9 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     join_code = if bound? do GameSession.get("join_code") else nil end
 
     if connected? && join_code do
-      PubSub.subscribe(MyPubSub, Rooms.topic_of_room(join_code))
+      Broadcast.connect_game_master(join_code)
+    else
+      IO.inspect("Not connected: #{connected?}, join_code: #{join_code}")
     end
 
     room_info = Rooms.get_room(join_code)
@@ -83,6 +84,7 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   end
 
   def handle_info({:players_updated, players}, socket) do
+    IO.inspect("GM sees: #{inspect(players, pretty: true)}")
     socket = socket
     |> assign(:players, players)
     {:noreply, socket}
@@ -98,7 +100,7 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   end
 
   def handle_info({:start_round, room}, socket) do
-    if socket.assigns[:game_state] in [:setup, :end_round] do
+    if socket.assigns[:game_state] in [:starting, :end_round] do
       {:noreply, load_room(socket, room)}
     else
       {:noreply, socket}

@@ -9,6 +9,9 @@
     <%= if player.status == :asleep do %>
         <button phx-click="kick-player" phx-value-player-id={player.id}>Kick</button>
     <% end %>
+    <%= if player.has_picks do %>
+        <span style="background: magenta;">✓</span>
+    <% end %>
 </li>
 <%end%>
 </ol>
@@ -30,7 +33,7 @@
 </ul>
 
 <%= if length(@crushes) < 5 do %>
-    <.form let={f} for={@add_crush_form} phx-submit="add-crush">
+    <.form let={f} for={@add_crush_form} id={length(@crushes) |> to_string} phx-submit="add-crush">
         <%= text_input f, :name %>
         <%= submit "Add" %>
     </.form>

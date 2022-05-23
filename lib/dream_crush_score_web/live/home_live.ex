@@ -48,6 +48,8 @@ defmodule DreamCrushScoreWeb.HomeLive do
   @impl true
   def handle_event("try_join_room", %{"join" => %{"code" => code, "name" => name}}, socket) do
     {status, player_id} = Rooms.player_join(code, name)
+    IO.inspect status
+    IO.inspect player_id
     case status do
       :ok ->
         GameSession.put("player_id", player_id)

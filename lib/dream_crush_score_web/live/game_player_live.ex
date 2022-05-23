@@ -5,8 +5,7 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
   alias DreamCrushScore.Room
   alias DreamCrushScoreWeb.HomeLive
   alias DreamCrushScore.GameSession
-  alias Phoenix.PubSub
-  alias DreamCrushScore.PubSub, as: MyPubSub
+  alias DreamCrushScore.Room.Broadcast
 
   def mount(_params, session, socket) do
     connected? = Phoenix.LiveView.connected?(socket)
@@ -20,8 +19,7 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
         {:ok, go_home(socket)}
       else
         if connected? do
-          PubSub.subscribe(MyPubSub, Rooms.topic_of_room(join_code))
-          PubSub.subscribe(MyPubSub, Rooms.topic_of_player_id(player_id))
+          Broadcast.connect_player(join_code, player_id)
         end
         socket = socket
         |> assign(:show_code, true)
@@ -93,9 +91,11 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     other_players = MapSet.new(socket.assigns.players, &(&1.id))
     ready? = picks
       |> Map.keys()
-      |> Enum.filter(&(&1 !== :my_pick))
+      |> Enum.filter(&(&1 !== "self"))
       |> MapSet.new()
+      |> tap(&IO.inspect("Picks: #{inspect(&1, pretty: true)}"))
       |> MapSet.equal?(other_players)
+    IO.inspect("Picks: #{inspect(other_players, pretty: true)}")
 
     GameSession.put(:picks, picks)
     if ready? do
