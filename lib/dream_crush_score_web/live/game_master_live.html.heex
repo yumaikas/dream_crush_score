@@ -10,7 +10,7 @@
         <button phx-click="kick-player" phx-value-player-id={player.id}>Kick</button>
     <% end %>
     <%= if player.has_picks do %>
-        <span style="background: magenta;">✓</span>
+        <span style="color: magenta;">✓</span>
     <% end %>
 </li>
 <%end%>
@@ -18,13 +18,23 @@
 
 <p>State of room: <%=@game_state%></p>
 
+<%= if length(@players) > 0 && Enum.all?(@players, &(&1.has_picks)) do %>
+    <button phx-click="end-round">Finish Round</button>
+<% end %>
+
 <%=if (length(Enum.filter(@players, fn p -> p.status == :awake end)) >= 2 
     && @game_state == :starting
     && length(@crushes) >= 2) do %>
     <button phx-click="start-round">Start!</button>
 <% end %>
 <ul>
+<%= if assigns[:show_score_name] do %>
+    <p>Showing score for: <%= @show_score_name %></p>
+<% end %>
 
+<%= if assigns[:last_round_scores] do %>
+    <.show_score_table score_lines={@last_round_scores} />
+<% end %>
 <h3>Crushes</h3>
 
 <%=for crush <- @crushes do %>
@@ -39,6 +49,12 @@
     </.form>
 <% else %>
 <% end %>
+
+
+<p>
+<button style="background:red;" phx-click="kill-game">Kill Room</button>
+(Kick all players, scores will *not* be saved)
+</p>
 
 <% else %>
 <h2>Room creation failed, going home in <%= @seconds %> seconds</h2>

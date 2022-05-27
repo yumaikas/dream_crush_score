@@ -2,6 +2,7 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   use DreamCrushScoreWeb, :live_view
   alias DreamCrushScore.Rooms
   alias DreamCrushScore.Room
+  alias DreamCrushScore.Player
   alias DreamCrushScoreWeb.HomeLive
   alias DreamCrushScore.Room.AddCrush
   alias DreamCrushScore.Room.Broadcast
@@ -74,6 +75,23 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     {:noreply, socket}
   end
 
+  def handle_event("end-round", _args, socket) do
+    Rooms.end_round(socket.assigns.join_code)
+    {:noreply, socket}
+  end
+
+  def handle_event("kill-game", _args, socket) do
+    Rooms.kill_room(socket.assigns.join_code)
+    {:noreply, go_home(socket)}
+  end
+
+  defp go_home(socket) do
+    GameSession.put("role", nil)
+    GameSession.put("join_code", nil)
+    push_redirect(socket, to: Routes.live_path(socket, HomeLive))
+  end
+
+
   def handle_info(:clean_path, socket) do
     {:noreply, push_patch(socket, to: Routes.live_path(socket, __MODULE__), replace: true)}
   end
@@ -84,7 +102,6 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
   end
 
   def handle_info({:players_updated, players}, socket) do
-    IO.inspect("GM sees: #{inspect(players, pretty: true)}")
     socket = socket
     |> assign(:players, players)
     {:noreply, socket}
@@ -107,7 +124,31 @@ defmodule DreamCrushScoreWeb.GameMasterLive do
     end
   end
 
+  def handle_info({:show_score_line, score_line}, socket) do
+    socket = assign(socket, :score_show_name, score_line.name)
+    socket = assign(socket, :game_state, :end_round)
+    {:noreply, socket}
+  end
+
+  def handle_info({:show_end_round, table}, socket) do
+    socket = assign(socket, :game_state, :end_round)
+    socket = assign(socket, :last_round_scores, table)
+    {:noreply, socket}
+  end
+
   def handle_info(:go_home, socket) do
     {:noreply, push_redirect(socket, to: Routes.live_path(socket, HomeLive, clear_token: "join_code"))}
   end
+
+  def show_score_table(assigns) do
+    ~H"""
+    <h3>The scores at the end of the round are:</h3>
+    <ul>
+      <%= for line <- @score_lines do %>
+        <li><%=line.name%> has <%=line.score%> points</li>
+      <%end%>
+    </ul>
+    """
+  end
+
 end

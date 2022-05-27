@@ -11,14 +11,17 @@
         <.crush_picker name={p.name} picks={@picks} crushes={@crushes} for={p.id} />
     <% end %>
 
-<% :end_round -> %>
-    <p>The scores are:</p>
-
-<% :end_game -> %>
-    <p>X won!</p>
+<% {:end_round, :waiting} %>
+    <p>Everyone has made their picks!</p>
+<% {:end_round, :show_score_line, score_line } -> %>
+    <%= show_score_line score_line %>
+<% {:end_round, :show_score_table, score_table } -> %>
+    <.show_score_table score_lines={score_table} />
+<% {:end_game, score_table} -> %>
+    <.show_score_table score_lines={score_table} />
 
 <%end %>
 
 <%= if @show_code do %>
-    Room code is: <%= @join_code %>
+    <p>Room code is: <%= @join_code %></p>
 <% end %>

@@ -27,7 +27,7 @@ defmodule DreamCrushScore.Player do
     picks[player_id]
   end
 
-  def finish_round(%__MODULE__{picks: picks, pick_history: history } = player, {score, choice, round_picks}) do
+  def finish_round(%__MODULE__{pick_history: history } = player, {score, choice, round_picks}) do
     player
     |> Map.put(:pick_history, Enum.concat(history, [{score, choice, round_picks}]))
     |> Map.put(:picks, %{})
@@ -35,15 +35,20 @@ defmodule DreamCrushScore.Player do
 end
 
 defmodule DreamCrushScore.Room do
-  @enforce_keys [:join_code]
-  defstruct [:join_code, players: [], crushes: [], state: :starting]
+  @enforce_keys [:join_code, :last_interact_time]
+  defstruct [:join_code, :last_interact_time, players: [], crushes: [], state: :starting]
   # state: can be :starting, :in_round, :end_round, or :end_game
   alias DreamCrushScore.Player
 
-  def join(%__MODULE__{state: state, players: users} = room, %Player{}=user) do
+  defp mark_interaction(%__MODULE__{}= state) do
+    Map.put(state, :last_interact_time, System.monotonic_time(:second))
+  end
 
+  def join(%__MODULE__{state: state, players: users} = room, %Player{}=user) do
     case state do
-      :starting -> %{room | players: Enum.concat(users, [user])}
+      :starting ->
+        %{room | players: Enum.concat(users, [user])}
+        |> mark_interaction()
       _ -> room
     end
   end
@@ -57,13 +62,19 @@ defmodule DreamCrushScore.Room do
   end
 
   def start_round(%__MODULE__{} = state) do
-    state |> Map.put(:state, :in_round)
+    state
+    |> Map.put(:state, :in_round)
+    |> mark_interaction()
   end
 
-  def end_round(%__MODULE__{players: players} = state) do
-    all_ready? = Enum.all?(players, &Player.has_picks?/1)
-    if all_ready? do
+  def end_round_ready?(%__MODULE__{players: players}) do
+    Enum.all?(players, &Player.has_picks?/1)
+  end
+
+  def end_round(%__MODULE__{} = state) do
+    if end_round_ready?(state) do
       do_end_round(state)
+      |> mark_interaction()
     else
       state
     end
@@ -73,6 +84,7 @@ defmodule DreamCrushScore.Room do
     pickmap = for p <- players, into: %{} do
       {p.id, p.picks["self"]}
     end
+    crush_set = MapSet.new(Enum.map(players, &(&1.picks["self"])))
 
     point_map = for me <- players, into: %{} do
       correct? = fn (p_id) -> pickmap[p_id] == me.picks[p_id] end
@@ -86,8 +98,13 @@ defmodule DreamCrushScore.Room do
       {me.id, {player_score, me.picks["self"], history}}
     end
 
-    update_in(state.players, fn players ->
+    state
+    |> Map.put(:state, :round_end)
+    |> Map.update!(:players, fn players ->
       Enum.map(players, fn p -> Player.finish_round(p, point_map[p.id]) end)
+    end)
+    |> Map.update!(:crushes, fn crushes ->
+      Enum.filter(crushes, &MapSet.member?(crush_set, &1))
     end)
   end
 
@@ -138,6 +155,7 @@ defmodule DreamCrushScore.Room do
             end
         end)
       end)
+      |> mark_interaction()
     else
       room
     end
@@ -145,6 +163,7 @@ defmodule DreamCrushScore.Room do
 
   def kick_player(%__MODULE__{players: players} = state, id) do
     Map.put(state, :players, Enum.filter(players, fn(p) -> p.id !== id end))
+    |> mark_interaction()
   end
 
   defp players_for_broadcast(players) do
@@ -181,6 +200,7 @@ defmodule DreamCrushScore.Room do
       _ -> p end
       end)
     Map.put(state, :players, players)
+    |> mark_interaction()
   end
 
   def mark_player_awake(%__MODULE__{players: players} = state, id) do
@@ -191,6 +211,7 @@ defmodule DreamCrushScore.Room do
         _ -> p end
       end)
     Map.put(state, :players, players)
+    |> mark_interaction()
   end
 
   def add_crush(%__MODULE__{state: state, crushes: crushes} = room, crush)
@@ -198,6 +219,7 @@ defmodule DreamCrushScore.Room do
     when state !== :in_round do
     unless Enum.any?(crushes, fn(c) -> c == crush end) do
       %{room | crushes: Enum.concat(crushes, [crush])}
+      |> mark_interaction()
     else
       room
     end
@@ -217,9 +239,11 @@ defmodule DreamCrushScore.Rooms do
   alias DreamCrushScore.Player
 
   def start_link(_opts) do
+    Process.send_after(__MODULE__, :sweep, 60_000)
     GenServer.start_link(__MODULE__, %{
       rooms: %{},
-      players: %{}
+      players: %{},
+      timers: %{} # Dict<join_code, timer_ref[]>
     }, name: __MODULE__)
   end
 
@@ -247,6 +271,14 @@ defmodule DreamCrushScore.Rooms do
     end
   end
 
+  def end_round(join_code) when is_binary(join_code) do
+    case GenServer.call(__MODULE__, {:end_round, join_code}) do
+      :ok -> :ok
+      :unready -> :unready
+      {:error, message} -> {:error, message}
+    end
+  end
+
   def player_reconnect(join_code, player_id) when is_binary(join_code) and is_binary(player_id) do
     case GenServer.call(__MODULE__, {:player_reconnect, self(), join_code, player_id}) do
      {player, room} ->
@@ -258,6 +290,10 @@ defmodule DreamCrushScore.Rooms do
 
   def kick_player(join_code, id) when is_binary(join_code) and is_binary(id) do
     GenServer.cast(__MODULE__, {:kick_player, join_code, id})
+  end
+
+  def kill_room(join_code) do
+    GenServer.cast(__MODULE__, {:kill_room, join_code})
   end
 
   def add_crush(join_code, id) do
@@ -300,7 +336,11 @@ defmodule DreamCrushScore.Rooms do
   @impl true
   def handle_call({:create_room}, _from, state) do
     join_code = make_code(4)
-    state = put_in(state.rooms[join_code], %Room{join_code: join_code})
+    state = put_in(state.rooms[join_code],
+      %Room{
+        join_code: join_code,
+        last_interact_time: System.monotonic_time(:second)
+      })
     {:reply, join_code, state}
   end
 
@@ -322,12 +362,32 @@ defmodule DreamCrushScore.Rooms do
       state = update_in(state.rooms[join_code], &Room.set_player_picks(&1, player_id, picks))
       # TODO: Overbroadcasting a bit here.
       Broadcast.updated_players(state.rooms[join_code])
-
       {:reply, :ok, state}
     else
       err ->
         IO.inspect err
         {:reply, {:error, "Unable to save because #{err}"}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:end_round, join_code}, _from, state) do
+    with %{ rooms: rooms, players: %{} } <- state,
+         {:ok, room} <- fetch_code(rooms, join_code, :no_room),
+         true <- Room.end_round_ready?(room) || :unready
+    do
+      state = update_in(state, [:rooms, join_code], &Room.end_round(&1))
+      room = state.rooms[join_code]
+      IO.inspect Room.scoreboard(state.rooms[join_code])
+      timers = for {line, idx} <- Room.scoreboard(room) |> Enum.with_index() do
+        IO.inspect line
+        Process.send_after(__MODULE__, {:broadcast_score_line, room, line}, 7500 * idx)
+      end
+      state = put_in(state, [:timers, join_code], timers)
+      {:reply, :ok, state}
+    else
+      :unready -> {:reply, :unready, state}
+      other -> {:reply, {:error, other}, state}
     end
   end
 
@@ -362,10 +422,31 @@ defmodule DreamCrushScore.Rooms do
   end
 
   @impl true
+  def handle_cast({:kill_room, join_code}, state) do
+    with %{ rooms: rooms, players: %{} } <- state,
+      {:ok, room} <- MapEx.fetch_code(rooms, join_code, :no_room)
+    do
+      for p <- Room.joined_players(room) do
+        Broadcast.kicked_player(room, p.id)
+      end
+      state = update_in(state.rooms, &Map.delete(&1, join_code))
+      {:noreply, state}
+    else
+      _ -> {:noreply, state}
+    end
+
+  end
+
+
+  @impl true
   def handle_cast({:start_round, join_code}, state) do
+    {:noreply, do_start_round(state, join_code)}
+  end
+
+  def do_start_round(state, join_code) do
     state = update_in(state,[:rooms, join_code], &Room.start_round(&1))
     Broadcast.start_round(state.rooms[join_code])
-    {:noreply, state}
+    state
   end
 
   defp fetch_code(map, key, code) do
@@ -378,17 +459,62 @@ defmodule DreamCrushScore.Rooms do
   end
 
   @impl true
+  def handle_info({:broadcast_score_line, %Room{join_code: join_code} = room, line}, state) do
+    state = update_in(state.timers[join_code], &Enum.filter(&1, fn t_ref -> Process.read_timer(t_ref) end))
+    Broadcast.show_score_line(room, line)
+
+    if length(state.timers[join_code]) === 0 do
+      Process.send_after(__MODULE__, {:show_end_round, room}, 7_500)
+    end
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:show_end_round, %Room{join_code: join_code} = room}, state) do
+    Broadcast.show_end_round(room)
+    Process.send_after(__MODULE__, {:start_round, join_code}, 10_000)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:start_round, join_code}, state) do
+    {:noreply, do_start_round(state, join_code)}
+  end
+
+
+  @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     {join_code, player_id} = state.players[ref]
 
-    state = state
-      |> update_in([:rooms, join_code], &Room.mark_player_asleep(&1, player_id))
-      |> update_in([:players], &Map.delete(&1, ref))
-
-    Broadcast.updated_players(state.rooms[join_code])
+    state = if state.rooms[join_code] do
+      state = state
+        |> update_in([:rooms, join_code], &Room.mark_player_asleep(&1, player_id))
+        |> update_in([:players], &Map.delete(&1, ref))
+      Broadcast.updated_players(state.rooms[join_code])
+      state
+    else
+      state
+    end
 
     {:noreply, state}
   end
+
+  @impl true
+  def handle_info(:sweep, state) do
+    state = update_in(state.rooms, fn rooms ->
+      now = System.monotonic_time(:second)
+      for {_, room} <- rooms, (now - room.last_interact_time) > (60 * 15) do
+        for p <- Room.joined_players(room) do
+          Broadcast.kicked_player(room, p.id)
+        end
+      end
+      for {join_code, room} <- rooms, (now - room.last_interact_time) <= (60 * 15), into: %{} do
+        {join_code, room}
+      end
+    end)
+    {:noreply, state}
+  end
+
 
   @alphabet 'ABCDEFGHIJKLMNOPLMNOPQRSTUVWXYZ1234567890'
 

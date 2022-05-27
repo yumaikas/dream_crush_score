@@ -38,6 +38,14 @@ defmodule DreamCrushScore.Room.Broadcast do
     PubSub.broadcast(MyPubSub, topic_of_room(room), {:start_round, room})
   end
 
+  def show_score_line(%Room{} = room, %{} = score_line) do
+    PubSub.broadcast(MyPubSub, topic_of_room(room), {:show_score_line, score_line})
+  end
+
+  def show_end_round(%Room{} = room) do
+    PubSub.broadcast(MyPubSub, topic_of_room(room), {:show_end_round, Room.scoreboard(room)})
+  end
+
   def topic_of_room(%Room{join_code: join_code}) do
     topic_of_room(join_code)
   end

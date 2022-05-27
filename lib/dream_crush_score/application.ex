@@ -8,8 +8,6 @@ defmodule DreamCrushScore.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Start the Ecto repository
-      DreamCrushScore.Repo,
       # Start the Telemetry supervisor
       DreamCrushScoreWeb.Telemetry,
       # Start the PubSub system

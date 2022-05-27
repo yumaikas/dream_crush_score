@@ -130,6 +130,23 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     {:noreply, start_round(socket, room, socket.assigns.player_id)}
   end
 
+  def handle_info(:round_end, socket) do
+    socket = socket
+    |> assign(:game_state, {:end_round, :waiting})
+    {:noreply, socket}
+  end
+
+  def handle_info({:show_score_line, score_line}, socket) do
+    socket = socket
+    |> assign(:game_state, {:end_round, :show_score_line, score_line})
+    {:noreply, socket}
+  end
+
+  def handle_info({:show_end_round, scoreboard}, socket) do
+    socket = socket
+    |> assign(:game_state, {:end_round, :show_score_table, scoreboard})
+    {:noreply, socket}
+  end
 
   # Function components
 
@@ -138,6 +155,32 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
       ^crush -> ""
       _ -> "button-outline"
     end
+  end
+
+  def show_score_table(assigns) do
+    ~H"""
+    <h3>The scores at the end of the round are:</h3>
+    <ul>
+      <%= for line <- @score_lines do %>
+        <li><%=line.name%> has <%=line.score%> points</li>
+      <%end%>
+    </ul>
+    """
+  end
+
+  def show_score_line(assigns) do
+    ~H"""
+    <h3><%=@name%> chose <%=@choice%></h3>
+    <%= for guess <- @guesses do %>
+    <span><%=guess.name%>
+      <%= if guess.correct do %>
+        <span style="color: magenta;">✓</span>
+      <% else %>
+        <span style="color: red;">X</span>
+      <% end %>
+    </span>
+    <% end %>
+    """
   end
 
   def crush_picker(assigns) do

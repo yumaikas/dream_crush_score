@@ -7,12 +7,12 @@
 # General application configuration
 import Config
 
-config :dream_crush_score,
-  ecto_repos: [DreamCrushScore.Repo]
+#config :dream_crush_score,
+#  ecto_repos: [DreamCrushScore.Repo]
 
 # Configures the endpoint
 config :dream_crush_score, DreamCrushScoreWeb.Endpoint,
-  url: [host: "localhost"],
+  url: [host: "0.0.0.0", port: 4001],
   render_errors: [view: DreamCrushScoreWeb.ErrorView, accepts: ~w(html json), layout: false],
   pubsub_server: DreamCrushScore.PubSub,
   live_view: [signing_salt: "S+f1HD6/"]
