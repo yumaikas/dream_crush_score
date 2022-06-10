@@ -5,8 +5,11 @@ defmodule DreamCrushScore.Room.Broadcast do
   alias Phoenix.PubSub
 
   def connect_game_master(join_code) when is_binary(join_code) do
-    IO.inspect("connecting GM to #{topic_of_room(join_code)}")
     PubSub.subscribe(MyPubSub, topic_of_room(join_code))
+  end
+
+  def disconnect_all(join_code) when is_binary(join_code) do
+    PubSub.broadcast(MyPubSub, topic_of_room(join_code), :go_home)
   end
 
   def connect_player(%Room{join_code: join_code} = _room, player_id)  do

@@ -6,12 +6,13 @@
     <%end %>
 
 <% :in_round -> %>
-    <.crush_picker name="you" crushes={@crushes} picks={@picks} for={"self"} />
+    <p>Hi <%= @name %>!</p>
+    <.crush_picker name="you" crushes={@crushes} picks={@picks} for={"self"} pick_history={[]} />
     <%= for p <- @other_players do %>
-        <.crush_picker name={p.name} picks={@picks} crushes={@crushes} for={p.id} />
+        <.crush_picker name={p.name} picks={@picks} crushes={@crushes} for={p.id} pick_history={p.pick_history} />
     <% end %>
 
-<% {:end_round, :waiting} %>
+<% {:end_round, :waiting} -> %>
     <p>Everyone has made their picks!</p>
 <% {:end_round, :show_score_line, score_line } -> %>
     <%= show_score_line score_line %>
@@ -25,3 +26,8 @@
 <%= if @show_code do %>
     <p>Room code is: <%= @join_code %></p>
 <% end %>
+
+<details>
+    <summary>Danger Zone!</summary>
+    <button style="background: red" phx-click="leave-room">Leave game</button>
+</details>

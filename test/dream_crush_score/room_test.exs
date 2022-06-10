@@ -25,7 +25,7 @@ defmodule DreamCrushScore.Room.Tests do
   end
 
   defp build_room(players, join_code) do
-    Enum.reduce(Map.values(players), %Room{join_code: join_code} , fn (player, room) ->
+    Enum.reduce(Map.values(players), %Room{join_code: join_code, last_interact_time: System.monotonic_time(:second)} , fn (player, room) ->
       Room.join(room, player)
     end)
   end
@@ -81,10 +81,16 @@ defmodule DreamCrushScore.Room.Tests do
     assert Room.get_player(room, player3.id) |> Player.has_picks?()
     assert Room.get_player(room, player4.id) |> Player.has_picks?()
 
+    assert Room.get_player(room, player1.id) |> Player.pick_history() |> length() === 0
+
     room = Room.end_round(room)
+    assert is_struct(room, Room)
+
+    assert Room.get_player(room, player1.id) |> Player.pick_history() |> length() === 1
 
 
-    IO.inspect Room.scoreboard(room)
+    # For debugging purposes
+    # IO.inspect Room.scoreboard(room)
 
   end
 

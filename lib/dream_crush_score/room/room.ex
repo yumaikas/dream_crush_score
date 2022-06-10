@@ -22,6 +22,13 @@ defmodule DreamCrushScore.Player do
     pick
   end
 
+  def pick_history(%__MODULE__{pick_history: history}) do
+    for {_, pick, _} <- history do
+      pick
+    end
+  end
+
+
   def previous_pick_for(%__MODULE__{pick_history: history }, player_id) do
     {_, _, picks} = List.last(history)
     picks[player_id]
@@ -167,7 +174,13 @@ defmodule DreamCrushScore.Room do
   end
 
   defp players_for_broadcast(players) do
-    Enum.map(players, fn(p) -> %{ name: p.name, id: p.id, status: p.status, has_picks: Player.has_picks?(p) } end)
+    Enum.map(players, fn(p) -> %{
+      name: p.name,
+      id: p.id,
+      status: p.status,
+      has_picks: Player.has_picks?(p),
+      pick_history: Player.pick_history(p)
+    } end)
   end
 
   def joined_players(%__MODULE__{players: players}) do
@@ -177,7 +190,7 @@ defmodule DreamCrushScore.Room do
   def other_players(players, me_id) do
     players
     |> Enum.filter(fn p -> p.id !== me_id end)
-    |> Enum.map(fn(p) -> %{ name: p.name, id: p.id, status: p.status, has_picks: p.has_picks } end)
+    |> Enum.map(fn(p) -> %{ name: p.name, id: p.id, status: p.status, has_picks: p.has_picks, pick_history: p.pick_history } end)
   end
 
   def crushes(%__MODULE__{crushes: crushes}) do
@@ -503,15 +516,15 @@ defmodule DreamCrushScore.Rooms do
   def handle_info(:sweep, state) do
     state = update_in(state.rooms, fn rooms ->
       now = System.monotonic_time(:second)
-      for {_, room} <- rooms, (now - room.last_interact_time) > (60 * 15) do
-        for p <- Room.joined_players(room) do
-          Broadcast.kicked_player(room, p.id)
-        end
+      swept_rooms = for {_, room} <- rooms, (now - room.last_interact_time) > (60 * 15), into: %{} do
+        Broadcast.disconnect_all(room.join_code)
+        {room.join_code, true}
       end
-      for {join_code, room} <- rooms, (now - room.last_interact_time) <= (60 * 15), into: %{} do
+      for {join_code, room} <- rooms, not Map.has_key?(swept_rooms, join_code), into: %{} do
         {join_code, room}
       end
     end)
+    Process.send_after(__MODULE__, :sweep, 60_000)
     {:noreply, state}
   end
 

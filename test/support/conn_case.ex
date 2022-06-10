@@ -32,7 +32,6 @@ defmodule DreamCrushScoreWeb.ConnCase do
   end
 
   setup tags do
-    DreamCrushScore.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

@@ -110,6 +110,11 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     {:noreply, pick_crush_for_player(socket, crush, player_id) }
   end
 
+  def handle_event("leave-room", %{}, socket) do
+    Rooms.kick_player(socket.assigns.join_code, socket.assigns.player_id)
+    {:noreply, socket}
+  end
+
   def handle_info({:players_updated, updated_players}, socket) do
     {:noreply, assign(socket, :players, Room.other_players(updated_players, socket.assigns.player_id)) }
   end
@@ -119,6 +124,10 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
   end
 
   def handle_info(:kicked, socket) do
+    {:noreply, go_home(socket)}
+  end
+
+  def handle_info(:go_home, socket) do
     {:noreply, go_home(socket)}
   end
 
@@ -187,8 +196,17 @@ defmodule DreamCrushScoreWeb.GamePlayerLive do
     ~H"""
     <p>
       <h4>Who would <%= @name %> pick?</h4>
+      <%= if length(@pick_history) > 0 do %>
+      <p>(They've chosen <%= Enum.join(@pick_history, ", ") %> so far)</p>
+      <% end %>
       <%= for crush <- @crushes do %>
-        <button phx-click="pick-crush" class={class_for(@picks, @for, crush)} phx-value-crush={crush} phx-value-for={@for}><%=crush%></button>
+        <button
+            phx-click="pick-crush"
+            class={class_for(@picks, @for, crush)}
+            phx-value-crush={crush}
+            phx-value-for={@for}>
+          <%=crush%>
+        </button>
       <% end %>
     </p>
     """
