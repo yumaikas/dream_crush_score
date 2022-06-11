@@ -47,6 +47,7 @@ defmodule DreamCrushScoreWeb.HomeLive do
 
   @impl true
   def handle_event("try_join_room", %{"join" => %{"code" => code, "name" => name}}, socket) do
+    code = code |> String.upcase()
     {status, player_id} = Rooms.player_join(code, name)
     IO.inspect status
     IO.inspect player_id
@@ -54,9 +55,14 @@ defmodule DreamCrushScoreWeb.HomeLive do
       :ok ->
         GameSession.put("player_id", player_id)
         GameSession.put("join_code", code)
+
         GameSession.put("role", :player)
         {:noreply, push_redirect(socket, to: Routes.live_path(socket, GamePlayerLive))} # TODO: Redirect to player page
       :error ->
+        socket = socket
+        |> put_flash(:error, "Invite code wasn't found!")
+        |> assign(:player_name, name)
+
         {:noreply, put_flash(socket, :error, "Invite code wasn't found!")}
     end
   end
